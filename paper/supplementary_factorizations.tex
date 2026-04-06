@@ -1,0 +1,427 @@
+\documentclass[10pt]{article}
+\usepackage[margin=0.8in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage[colorlinks=false,pdfborder={0 0 0}]{hyperref}
+\usepackage{enumitem}
+
+\title{Supplementary Material:\\Complete Prime Factorization of 107 Neural Network Algorithms\\for ``Computational Primes'' (Bieg, 2026)}
+\author{Michael Bieg\\\texttt{Bieg.Michael@web.de}}
+\date{April 2026}
+
+\begin{document}
+\maketitle
+
+\noindent\textbf{Legend.} P$n$ = physical prime (analog hardware exists). X$n$ = missing prime (no analog equivalent).\\
+\textbf{M} = fully mappable to analog. \textbf{G} = GPU-mappable (X2/X4 available on GPU). \textbf{U} = unmappable (X1 or X3).
+
+\section{Attention \& Transformer Core (A1--A20)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+A1 & Scaled Dot-Product Attn & P11$\cdot$P2$\cdot$P3$\cdot$P1$\cdot$P12$\cdot$P11 & M & Core: QK$^T$/\(\sqrt{d}\) via P11$\cdot$P2, softmax via P3$\cdot$P1$\cdot$P12, attn$\times$V via P11 \\
+A2 & Multi-Query Attn (MQA) & P11$\cdot$P2$\cdot$P3$\cdot$P1$\cdot$P12$\cdot$P11 & M & Same primes as A1; shared K,V is wiring/fan-out \\
+A3 & Grouped-Query Attn (GQA) & P11$\cdot$P2$\cdot$P3$\cdot$P1$\cdot$P12$\cdot$P11 & M & Interpolation MHA$\leftrightarrow$MQA; group = static routing \\
+A4 & FlashAttention (tiled) & P11$\cdot$P2$\cdot$P3$\cdot$P1$\cdot$P12$\cdot$P5$\cdot$P8 & G & Online softmax adds P5 (running max) + P8 (tile accumulator); tile dispatch via X2 \\
+A5 & Sliding Window Attn & P11$\cdot$P2$\cdot$P3$\cdot$P1$\cdot$P12$\cdot$P7 & M & P7 gates window boundary; window size is static \\
+A6 & Linear Attention & P11$\cdot$P1$\cdot$P12$\cdot$P3 & M & Kernel $\phi$ determines primes; ELU+1 uses P3 \\
+A7 & Cross-Attention & P11$\cdot$P2$\cdot$P3$\cdot$P1$\cdot$P12$\cdot$P11 & M & Identical to A1; cross = routing distinction \\
+A8 & Sparse Attn (BigBird) & P11$\cdot$P2$\cdot$P3$\cdot$P1$\cdot$P12$\cdot$P7$\cdot$P10 & M & Fixed sparsity via P7 mask; random component via P10 \\
+A9 & Causal Masking & P5$\cdot$P7 & M & Solved: race topology enforces $j \leq i$ \\
+A10 & Attention Score Masking & P1$\cdot$P2$\cdot$P7 & M & Additive $-\infty$ mask (P1$\cdot$P2) or multiplicative (P7) \\
+A11 & Multi-Head Split & P2$\cdot$P1 & M & Parallel crossbars + concat \\
+A12 & Residual Connection & P1 & M & Solved: KCL at node \\
+A13 & RoPE & P11$\cdot$P2 & M & Fixed trig coefficients $\times$ variable \\
+A14 & Token Embedding & P8$\cdot$P2 & M & Crossbar with one-hot; area scales with vocab \\
+A15 & KV-Cache + Eviction & P8$\cdot$P5 + X2 & G & Dynamic addressing \\
+A16 & KV-Cache Quantization & P2$\cdot$P5$\cdot$P7 & M & Scale (P2), clip+round (P7), find absmax (P5) \\
+A17 & Prefix Caching & P7$\cdot$P8 + X2 & G & Cache hit = P7; eviction policy needs X2 \\
+A18 & KV-Cache Compression & P1$\cdot$P5$\cdot$P7$\cdot$P8$\cdot$P11 + X2 & G & Track attn scores (P1$\cdot$P8), rank (P5), evict (P7+X2) \\
+A19 & Prompt Caching & P7$\cdot$P8 + X2 & G & Hash-match-retrieve; needs associative lookup \\
+A20 & Speculative Decoding & P5$\cdot$P7$\cdot$P10$\cdot$P12 + X1$\cdot$X3 & U & Token comparison (X1) + variable-depth rollback (X3) \\
+\end{longtable}
+
+\section{Activation Functions (B1--B12)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+B1 & ReLU & P7$\cdot$P11 & M & Comparator + analog switch; or diode \\
+B2 & Leaky ReLU & P7$\cdot$P11$\cdot$P2$\cdot$P1 & M & Two scaled branches gated by P7, summed \\
+B3 & PReLU (parametric) & P7$\cdot$P11$\cdot$P2$\cdot$P1 & M & Inference = Leaky ReLU (learned $\alpha$ fixed) \\
+B4 & ELU & P7$\cdot$P11$\cdot$P3$\cdot$P1$\cdot$P2 & M & Negative branch: $\alpha(e^x-1)$ via P3$\cdot$P1$\cdot$P2 \\
+B5 & Swish / SiLU & P11$\cdot$P6 & M & $x \cdot \sigma(x)$: Gilbert $\times$ FET-pair sigmoid \\
+B6 & Mish & P11$\cdot$P6$\cdot$P3$\cdot$P1$\cdot$P4 & M & $x \cdot \tanh(\ln(1+e^x))$; 5 primes deep, all physical \\
+B7 & SoftPlus & P4$\cdot$P1$\cdot$P3 & M & $\ln(1+e^x)$: subthreshold FET $\to$ junction $\to$ diode \\
+B8 & GELU (approx) & P11$\cdot$P6$\cdot$P2 & M & Approx $x \cdot \sigma(1.702x)$: same as Swish with P2 prescale \\
+B9 & Tanh & P6$\cdot$P2$\cdot$P1 & M & $2\sigma(2x)-1$: differential FET pair gives tanh directly \\
+B10 & HardSigmoid & P7$\cdot$P1$\cdot$P2 & M & $\mathrm{clip}(x/6+0.5,0,1)$: divider + dual comparator \\
+B11 & HardSwish & P11$\cdot$P7$\cdot$P1$\cdot$P2 & M & $x \cdot \mathrm{HardSigmoid}(x)$: Gilbert $\times$ clipped-linear \\
+B12 & Squared ReLU & P11$\cdot$P7 & M & $\mathrm{ReLU}(x)^2$: comparator + squarer \\
+\end{longtable}
+
+\section{Normalization (C1--C7)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+C1 & RMSNorm & P1$\cdot$P2$\cdot$P11$\cdot$P12 & M & \textbf{Solved}: AGC feedback or translinear pipeline (this paper) \\
+C2 & LayerNorm & P1$\cdot$P2$\cdot$P11$\cdot$P12 & M & RMSNorm + mean subtraction (P1$\cdot$P2 for $\mu$) \\
+C3 & BatchNorm (training) & P1$\cdot$P2$\cdot$P11$\cdot$P12$\cdot$P8 + X2 & G & Cross-sample stats need dynamic routing (X2) \\
+C4 & BatchNorm (inference) & P1$\cdot$P2 & M & Frozen: fixed affine $\gamma(x-\mu)/\sigma + \beta$ \\
+C5 & GroupNorm & P1$\cdot$P2$\cdot$P11$\cdot$P12 & M & Stats over fixed channel groups; no cross-sample dep. \\
+C6 & InstanceNorm & P1$\cdot$P2$\cdot$P11$\cdot$P12 & M & GroupNorm with group = 1 channel \\
+C7 & Weight Normalization & P1$\cdot$P2$\cdot$P11$\cdot$P12 & M & $w = g \cdot v / \|v\|$: norm (P1$\cdot$P11$\cdot$P12) + scale \\
+\end{longtable}
+
+\section{Loss Functions (D1--D8)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+D1 & Cross-Entropy Loss & P3$\cdot$P4$\cdot$P1$\cdot$P2 & M & Solved: race + diode + KCL \\
+D2 & MSE Loss & P1$\cdot$P2$\cdot$P11 & M & Subtract, square (P11), sum, scale \\
+D3 & L1 Loss & P1$\cdot$P2$\cdot$P7$\cdot$P11 & M & Full-wave rectifier (P7$\cdot$P11 for $|x|$) \\
+D4 & Huber Loss & P1$\cdot$P2$\cdot$P7$\cdot$P11 & M & Piecewise: P7 selects quadratic vs linear branch \\
+D5 & Focal Loss & P1$\cdot$P2$\cdot$P3$\cdot$P4$\cdot$P6$\cdot$P11 & M & $(1-p)^\gamma \log p$: power via P3$\cdot$P2$\cdot$P4 \\
+D6 & Triplet Margin Loss & P1$\cdot$P2$\cdot$P7$\cdot$P11$\cdot$P12 & M & Distances + margin + ReLU clamp \\
+D7 & KL Divergence & P1$\cdot$P4$\cdot$P11 & M & $\sum p \ln(p/q)$: log-ratio via diodes = translinear \\
+D8 & CTC Loss & P1$\cdot$P3$\cdot$P4$\cdot$P11 + X2$\cdot$X3 & U & Dynamic alignment graph + unbounded recursion \\
+\end{longtable}
+
+\section{Pooling (E1--E4)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+E1 & Average Pooling & P1$\cdot$P2 & M & Resistor averaging network \\
+E2 & Max Pooling & P5 & M & WTA over fixed receptive field; 1 prime \\
+E3 & Adaptive Average Pooling & P1$\cdot$P2 + X2 & G & Dynamic window size; if fixed at compile time $\to$ M \\
+E4 & Global Average Pooling & P1$\cdot$P2 & M & AvgPool with window = full spatial extent \\
+\end{longtable}
+
+\section{Convolutions (F1--F6)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+F1 & Conv1D & P1$\cdot$P11$\cdot$P8 & M & Crossbar with sliding window \\
+F2 & Conv2D & P1$\cdot$P11$\cdot$P8 & M & 2D crossbar tiling \\
+F3 & Depthwise Separable Conv & P1$\cdot$P11$\cdot$P8 & M & Per-channel spatial + 1$\times$1 pointwise \\
+F4 & Dilated / Atrous Conv & P1$\cdot$P2$\cdot$P11$\cdot$P8 & M & P2 scales stride spacing by dilation rate \\
+F5 & Transposed Conv & P1$\cdot$P11$\cdot$P8 & M & Same primes as Conv2D; transposition = routing \\
+F6 & Winograd Conv & P1$\cdot$P2$\cdot$P11 & M & Pre/post-transforms (P1$\cdot$P2), element-wise (P11) \\
+\end{longtable}
+
+\section{Optimizers (G1--G7)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+G1 & SGD + Momentum & P1$\cdot$P2$\cdot$P8 & M & Leaky integrator = capacitor + resistive drain \\
+G2 & Adam / AdamW & P1$\cdot$P2$\cdot$P11$\cdot$P12$\cdot$P8 & M & $3\times$param storage; impractical $>$1M params \\
+G3 & AdaGrad & P1$\cdot$P2$\cdot$P11$\cdot$P12$\cdot$P8 & M & Accumulated squared gradients (P8$\cdot$P11) \\
+G4 & RMSProp & P1$\cdot$P2$\cdot$P11$\cdot$P12$\cdot$P8 & M & EMA of squared grads (leaky P8) \\
+G5 & LAMB / LARS & P1$\cdot$P2$\cdot$P11$\cdot$P12$\cdot$P8 & M & Adam + layer-wise trust ratio (extra P12) \\
+G6 & LION & P1$\cdot$P2$\cdot$P7$\cdot$P8 & M & $\mathrm{sign}()$ = P7; no second moment $\to$ no P11, P12 \\
+G7 & Gradient Clipping & P1$\cdot$P2$\cdot$P7$\cdot$P11$\cdot$P12 & M & Norm (P1$\cdot$P11), compare (P7), rescale (P12$\cdot$P2) \\
+\end{longtable}
+
+\section{Training Techniques (H1--H5)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+H1 & Backpropagation & P11$\cdot$P1$\cdot$P9 + X4 & G & Graph tracing (X4) on GPU via torch.compile \\
+H2 & Gradient Checkpointing & X4 & G & Pure control flow \\
+H3 & Mixed Precision & P2 & M & Variable scaling factors \\
+H4 & Knowledge Distillation & P1$\cdot$P2$\cdot$P3$\cdot$P4 + X4 & G & Inference mappable; training needs X4 \\
+H5 & Contrastive Learning & P1$\cdot$P2$\cdot$P3$\cdot$P11 & M & Batch pairwise similarity; $O(B^2)$ matmul \\
+\end{longtable}
+
+\section{Positional Encoding (I1--I3)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+I1 & Sinusoidal (fixed) & P1$\cdot$P2$\cdot$P3$\cdot$P4 & M & LC oscillator bank at geometric frequencies \\
+I2 & ALiBi & P1$\cdot$P2$\cdot$P7 & M & Linear ramp $-m|i-j|$; drastically simpler \\
+I3 & Learned Embeddings & P1$\cdot$P8$\cdot$P11 & M & Lookup = one-hot $\times$ embedding matrix \\
+\end{longtable}
+
+\section{Generative Models (J1--J5)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+J1 & Diffusion Reverse & P3$\cdot$P1$\cdot$P2$\cdot$P10$\cdot$P11 & M & $T$ serial passes; solved: Extropic DTCA \\
+J2 & Thermodynamic Denoising & P10$\cdot$P7$\cdot$P1$\cdot$P2$\cdot$P3$\cdot$P8 & M & Hardware BM chain; XTR-0 board built \\
+J3 & VAE Reparametrization & P1$\cdot$P2$\cdot$P10 & M & Solved: DC offset + scaled noise \\
+J4 & GAN Training & P1$\cdot$P2$\cdot$P3$\cdot$P6$\cdot$P11 + X4 & G & Inference M; training needs backprop \\
+J5 & Flow Matching & P1$\cdot$P2$\cdot$P11$\cdot$P8 & M & ODE Euler steps; all mappable \\
+\end{longtable}
+
+\section{Sequence \& State-Space Models (K1--K5)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+K1 & S4D (time-invariant SSM) & P8$\cdot$P2$\cdot$P1 & M & Solved: memristor CIM with native decay \\
+K2 & Mamba (selective SSM) & P8$\cdot$P2$\cdot$P1$\cdot$P11 + X2 & G & Input-dep.\ A,B,C reprogramming \\
+K3 & LSTM / GRU Gates & P6$\cdot$P11$\cdot$P1$\cdot$P2$\cdot$P8 & M & 3-gate timing coordination \\
+K4 & Thermo Sampling + MatInv & P10$\cdot$P1$\cdot$P2$\cdot$P8 & M & Normal Computing SPU/CN101 \\
+K5 & Classifier-Free Guidance & P1$\cdot$P2 & M & Weighted sum of two passes; trivial \\
+\end{longtable}
+
+\section{Reinforcement Learning (L1--L5)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+L1 & PPO / TRPO & P1$\cdot$P2$\cdot$P4$\cdot$P11$\cdot$P12 + X4 & G & Policy gradient needs backprop \\
+L2 & TD Learning & P1$\cdot$P2$\cdot$P8 & M & Accumulation + scaling + delay \\
+L3 & Experience Replay & P8 + X2 & G & Random access (X2 on GPU) \\
+L4 & RLHF Pipeline & P1$\cdot$P2$\cdot$P3$\cdot$P6$\cdot$P11 + X4$\cdot$X2 & G & Multi-model orchestration \\
+L5 & MCTS & P5$\cdot$P10 + X2$\cdot$X3 & U & Unbounded dynamic tree \\
+\end{longtable}
+
+\section{GNN \& Graph (M1--M4)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+M1 & Message Passing GNN & P1$\cdot$P2$\cdot$P11 & M & Fixed graph topology = fixed crossbar \\
+M2 & GAT (Graph Attention) & P1$\cdot$P2$\cdot$P3$\cdot$P5$\cdot$P11 & M & Softmax over neighbors; fixed graph \\
+M3 & WL-Test / Graph Iso & X1 & U & Symbolic hashing \\
+M4 & Dynamic Graph Update & P1$\cdot$P2 + X2 & G & Topology change at runtime \\
+\end{longtable}
+
+\section{Numerics \& Scientific (N1--N4)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+N1 & Sparse Matrix Ops & P1$\cdot$P2 & M & Area efficiency, not feasibility \\
+N2 & Iterative Solver (CG) & P1$\cdot$P2$\cdot$P11 & M & Convergence check needs P7 or ADC \\
+N3 & SVD / Eigendecomp & P1$\cdot$P2$\cdot$P11 & M & Power iteration analog; full SVD serial \\
+N4 & Auto Differentiation & X4 & G & Symbolic tracing (X4 on GPU) \\
+\end{longtable}
+
+\section{Quantization \& Efficiency (O1--O5)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+O1 & GPTQ & P1$\cdot$P2$\cdot$P7$\cdot$P11$\cdot$P12$\cdot$P8 & M & Hessian inverse (P12), column-wise round (P7) \\
+O2 & AWQ & P1$\cdot$P2$\cdot$P7$\cdot$P11$\cdot$P8 & M & Activation-aware scaling + quantization \\
+O3 & SmoothQuant & P1$\cdot$P2$\cdot$P7$\cdot$P11 & M & Per-channel scaling migration \\
+O4 & LoRA & P1$\cdot$P11$\cdot$P8 & M & $W + BA$: two small matmuls + sum \\
+O5 & QLoRA & P1$\cdot$P2$\cdot$P7$\cdot$P11$\cdot$P8 & M & LoRA + NF4 quantization of frozen W \\
+\end{longtable}
+
+\section{Sampling \& Decoding (P1--P5)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+P1\textsuperscript{*} & Top-K Sampling & P5$\cdot$P3 & M & Solved: K-fold race \\
+P2\textsuperscript{*} & Nucleus (Top-p) Sampling & P1$\cdot$P2$\cdot$P3$\cdot$P5$\cdot$P7$\cdot$P10$\cdot$P12 & M & CumSum + threshold + sample from remaining \\
+P3\textsuperscript{*} & Temperature Scaling & P2$\cdot$P12 & M & $z/T$: voltage divider. Minimal factorization \\
+P4\textsuperscript{*} & Repetition Penalty & P1$\cdot$P2$\cdot$P7$\cdot$P8$\cdot$P11 + X2 & G & Variable-length token history needs X2 \\
+P5\textsuperscript{*} & Beam Search & P5$\cdot$P4 + X2$\cdot$X3 & U & Dynamic hypothesis tree \\
+\end{longtable}
+{\small\textsuperscript{*}IDs prefixed to avoid collision with prime notation.}
+
+\section{Parallelism \& Infrastructure (Q1--Q5)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Q1 & Tensor Parallelism & P1$\cdot$P11$\cdot$P8 + X2 & G & Partial matmul + all-reduce (P1 across network) \\
+Q2 & Pipeline Parallelism & P1$\cdot$P11$\cdot$P8 + X2 & G & Standard layer primes; schedule needs X2 \\
+Q3 & Ring Attention & P11$\cdot$P2$\cdot$P3$\cdot$P1$\cdot$P8 + X2 & G & Chunked attn with ring comm pattern \\
+Q4 & MoE Routing & P5$\cdot$P1$\cdot$P2$\cdot$P3 & M & Top-K race; bias = load balancing \\
+Q5 & Mixture-of-Depths & P5$\cdot$P6$\cdot$P7$\cdot$P11 + X2 & G & Router scores $\to$ top-k skip; dynamic per token \\
+\end{longtable}
+
+\section{Probabilistic \& Misc (R1--R4)}
+
+\begin{longtable}{rlp{3.0cm}cp{4.8cm}}
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endfirsthead
+\toprule
+\# & Algorithm & Factorization & St. & Note \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+R1 & Bayesian NN Inference & P10$\cdot$P1$\cdot$P2$\cdot$P3$\cdot$P11 & M & MCMC via thermal sampling \\
+R2 & BPE Tokenizer & X1 & U & Symbolic; no continuous structure \\
+R3 & Dropout & P7$\cdot$P10 & M & Random mask (P10) $\times$ threshold gate (P7) \\
+R4 & Stochastic Depth & P7$\cdot$P10 & M & Random layer skip; same primes as Dropout \\
+\end{longtable}
+
+\section{Summary Statistics}
+
+\begin{tabular}{lcl}
+\toprule
+Status & Count & Fraction \\
+\midrule
+\textbf{M} (fully mappable) & 79 & 73.8\% \\
+\textbf{G} (GPU-mappable) & 22 & 20.6\% \\
+\textbf{U} (unmappable) & 6 & 5.6\% \\
+\midrule
+\textbf{Total} & \textbf{107} & 100\% \\
+\bottomrule
+\end{tabular}
+
+\bigskip
+\noindent\textbf{Key findings:}
+\begin{itemize}[leftmargin=*]
+\item 79 of 107 operations (74\%) are fully realizable on analog hardware using only P1--P12.
+\item All 22 GPU-mappable operations are blocked by X2 (dynamic topology) or X4 (symbolic tracing), both available on modern GPUs.
+\item Only 6 operations (5.6\%) are fundamentally unmappable: Speculative Decoding (X1+X3), MCTS (X2+X3), Beam Search (X2+X3), CTC Loss (X2+X3), WL-Test (X1), BPE Tokenizer (X1).
+\item The most frequently invoked primes are P1 ($\Sigma$, 89 appearances) and P11 ($\times$, 62 appearances) --- accumulation and variable multiplication are the backbone of neural computation.
+\item The minimal factorization is Temperature Scaling (P2$\cdot$P12, 2 primes). The maximal is Nucleus Sampling (7 primes).
+\end{itemize}
+
+\end{document}

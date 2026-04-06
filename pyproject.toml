@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prime-compiler"
+version = "0.1.0"
+description = "Systematic framework for partitioning neural network computation across analog and digital domains"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Michael Bieg", email = "Bieg.Michael@web.de"}]
+requires-python = ">=3.10"
+dependencies = ["torch>=2.0", "numpy"]
+
+[project.optional-dependencies]
+viz = ["matplotlib"]
+dev = ["pytest"]
+
+[project.scripts]
+prime-compile = "prime_compiler.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
