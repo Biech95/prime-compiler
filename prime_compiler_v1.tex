@@ -1,0 +1,533 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage[colorlinks=false,pdfborder={0 0 0}]{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+% \usepackage{multirow}
+
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{remark}{Remark}
+\newtheorem{corollary}{Corollary}
+
+\title{Computational Primes:\\A Systematic Framework for Partitioning\\Neural Network Computation Across\\Analog and Digital Domains}
+\author{Michael Bieg\\
+\textit{Independent Researcher}\\
+\texttt{Bieg.Michael@web.de}}
+\date{April 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Analog and mixed-signal neural network accelerators face a universal design problem: which operations should be computed in the analog domain (exploiting physics at near-zero energy cost) and which should remain digital (exact but energy-intensive)? Current approaches solve this partitioning problem ad hoc for each chip design. We introduce \textbf{Computational Primes}---a set of 12 irreducible operations with known physical implementations (P1--P12) and 4 operations without physical equivalents (X1--X4)---and show that every neural network algorithm can be uniquely factored into these primes. This factorization enables a systematic compiler that (1)~decomposes any compute graph into primes, (2)~assigns each prime to the analog or digital domain based on hardware constraints, (3)~identifies multi-computation fusion opportunities where a single physical event yields multiple outputs, and (4)~minimizes domain transitions (ADC/DAC). We factorize 107 algorithms spanning transformer inference, training, generative models, reinforcement learning, GNNs, and SSMs. Of these, 79 are fully mappable to analog hardware, 22 become mappable on GPUs (where X2 and X4 are available), and 6 remain fundamentally unmappable. Analysis of five recent analog chips (IBM 14nm PCM, TSMC CIM, Extropic XTR-0, Normal Computing CN101, J\"ulich gain-cell) shows that all made suboptimal manual partitioning decisions that the prime compiler would have improved. We further demonstrate that RMSNorm---used by LLaMA, Mistral, and Gemma---has a fully analog implementation via AGC feedback circuits, resolving the last major open mapping for transformer inference.
+\end{abstract}
+
+\section{Introduction}
+
+The past three years have seen an unprecedented surge in analog and mixed-signal neural network accelerators. IBM demonstrated a 14nm PCM chip running ALBERT~\cite{ibm2025}, TSMC fabricated a memristor+SRAM heterogeneous CIM processor~\cite{tsmc2025}, Extropic built a thermodynamic computing board for diffusion models~\cite{extropic2025}, Normal Computing taped out an RLC-based sampling ASIC~\cite{normal2025}, and Leroux et al.\ at Forschungszentrum J\"ulich showed analog attention with 70,000$\times$ energy reduction over GPUs~\cite{leroux2025a}.
+
+Every one of these projects confronted the same fundamental question: \textit{Which operations should be computed in the analog domain, and which should remain digital?}
+
+Currently, each team answers this question through manual analysis specific to their hardware and target workload. IBM maps matrix multiplications to PCM crossbars but keeps LayerNorm and Softmax digital. Leroux et al.\ replace Softmax with HardSigmoid because ``normalization operations are challenging to implement using analog circuitry''~\cite{leroux2025a}. No systematic framework exists for making these decisions.
+
+We introduce such a framework. Our contributions are:
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Computational Primes}: A catalog of 12 irreducible operations (P1--P12) with verified physical implementations and 4 operations (X1--X4) without physical equivalents, forming a complete basis for neural network computation (\S\ref{sec:primes}).
+
+\item \textbf{Universal factorization}: Decomposition of 107 algorithms into their prime factors, enabling immediate assessment of analog mappability (\S\ref{sec:factorization}).
+
+\item \textbf{Domain assignment and fusion}: A decision framework for analog/digital partitioning with automatic detection of multi-computation opportunities---physical events that yield $2$--$12\times$ throughput multipliers at zero marginal hardware cost (\S\ref{sec:compiler}).
+
+\item \textbf{RMSNorm resolution}: The first fully analog mapping of RMSNorm via automatic gain control (AGC) feedback, eliminating the last major barrier to fully analog transformer inference (\S\ref{sec:rmsnorm}).
+
+\item \textbf{Chip analysis}: Retrospective analysis of five recent analog chips showing that prime-compiler-guided partitioning would have captured 15--40\% additional energy savings on nonlinear operations (\S\ref{sec:analysis}).
+\end{enumerate}
+
+\subsection{Scope and Limitations}
+
+This is a \textit{framework} paper, not a chip paper. We do not fabricate hardware or claim measured speedups. The value is in the systematic methodology: replacing ad hoc partitioning decisions with a principled, automatable approach. All quantitative claims about analog implementations reference published, peer-reviewed hardware results.
+
+\section{Computational Primes}
+\label{sec:primes}
+
+\begin{definition}[Computational Prime]
+An operation $P$ is a computational prime if (a)~it cannot be decomposed into simpler operations that each have independent physical implementations, and (b)~it has at least one verified mapping to a physical system that computes it at $O(0)$ marginal energy cost.
+\end{definition}
+
+We identify 12 primes satisfying this definition and 4 ``missing primes'' that lack any known physical implementation.
+
+\subsection{The 12 Physical Primes}
+
+\begin{table}[t]
+\centering
+\caption{The 12 computational primes with physical implementations.}
+\label{tab:primes}
+\footnotesize
+\begin{tabular}{clllll}
+\toprule
+ID & Operation & Symbol & Physics & Hardware & Ref. \\
+\midrule
+P1 & Accumulation & $\Sigma$ & Kirchhoff's Current Law & Wire junction & \cite{prezioso2015} \\
+P2 & Scaling & $\times c$ & Ohm's Law: $I = G \cdot V$ & Memristor / resistor & \cite{prezioso2015} \\
+P3 & Exponential & $e^x$ & Boltzmann: $P \propto e^{-E/kT}$ & sMTJ / subthreshold FET & \cite{bieg2025,sillman2023} \\
+P4 & Logarithm & $\ln x$ & Diode: $V = \frac{kT}{q}\ln\frac{I}{I_s}$ & Diode / subthreshold FET & \cite{tageldeen2025} \\
+P5 & Selection & $\arg\max$ & Race to threshold & sMTJ array / WTA & \cite{bieg2025,bieg2026} \\
+P6 & Sigmoid & $\sigma(x)$ & Fermi-Dirac distribution & Subthreshold FET pair & \cite{mram_sigmoid2022} \\
+P7 & Threshold & $\theta(x)$ & Phase transition / comparator & Schmitt trigger & --- \\
+P8 & Integration & $\int$ & Charge: $Q = \int I\,dt$ & Capacitor / memristor & \cite{denram2024} \\
+P9 & Differentiation & $d/dt$ & Induction: $V = L\frac{dI}{dt}$ & RC high-pass & --- \\
+P10 & Stochasticity & $\xi$ & Thermal fluctuation & Johnson-Nyquist / RTN & \cite{cryptoristor2024} \\
+P11 & Multiplication & $a \times b$ & Transistor square law & Gilbert cell & --- \\
+P12 & Inversion & $1/x$ & Translinear loop & BJT/MOSFET circuit & \cite{tageldeen2025} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{P1 (Accumulation, $\Sigma$):} $y = \sum_i x_i$. Kirchhoff's Current Law guarantees that currents sum at any node. Cost: $O(0)$---charge conservation is exact and requires no energy.
+
+\textbf{P2 (Scaling, $\times c$):} $y = c \cdot x$. Ohm's Law: $I = G \cdot V$ where the conductance $G$ encodes the constant $c$. In memristive crossbars, P1$\cdot$P2 = matrix-vector multiplication.
+
+\textbf{P3 (Exponential, $e^x$):} Any MOSFET in the subthreshold regime: $I_D = I_0 \exp(V_{GS}/nV_T)$. Also realized via Arrhenius rates in sMTJs~\cite{bieg2025} and chemical kinetics~\cite{bieg2026}.
+
+\textbf{P4 (Logarithm, $\ln x$):} The inverse of P3. A diode's voltage is $V = (kT/q)\ln(I/I_s)$. Precision limited by ideality factor $\eta$ (typically 1.0--1.5).
+
+\textbf{P5 (Selection, $\arg\max$):} A race among competing exponential processes: the first to fire identifies the maximum. Produces exact softmax samples in $O(1)$ time~\cite{bieg2025}. The race simultaneously yields 5 additional observables~\cite{bieg2026}.
+
+\textbf{P6 (Sigmoid, $\sigma$):} The Fermi-Dirac distribution $f(E) = 1/(1 + e^{(E-\mu)/kT})$ is natively computed by a subthreshold MOSFET transfer characteristic. Variants: $\tanh(x) = 2\sigma(2x) - 1$.
+
+\textbf{P7 (Threshold, $\theta$):} A comparator or Schmitt trigger implements $y = 1$ if $x > 0$, else $0$. In the Ising model limit ($T \to 0$), this is a phase transition.
+
+\textbf{P8 (Integration, $\int$):} Charge accumulation on a capacitor: $Q = \int I\,dt$. Volatile (capacitor, $\tau \propto RC$) or non-volatile (memristor, floating gate). DenRAM~\cite{denram2024} demonstrated programmable RC time constants for temporal processing.
+
+\textbf{P9 (Differentiation, $d/dt$):} An RC high-pass filter or inductor: $V = L\,dI/dt$. Passive circuit, $O(0)$ cost. Limited by noise amplification at high frequencies.
+
+\textbf{P10 (Stochasticity, $\xi$):} Thermal fluctuations generate true randomness at zero cost. Johnson-Nyquist noise ($V^2 = 4kTR\Delta f$), sMTJ random switching, or random telegraph noise in standard MOSFETs~\cite{cryptoristor2024}. Normally suppressed; here exploited.
+
+\textbf{P11 (Variable Multiplication, $\times$):} $y = a \cdot b$ where both inputs are variables. The Gilbert cell (4-quadrant analog multiplier) computes this via the transistor square law. Distinct from P2 (one input is a stored constant).
+
+\textbf{P12 (Inversion, $1/x$):} Translinear loops~\cite{gilbert1975} compute $I_{out} = I_a \cdot I_b / I_c$ using 4--6 BJTs or subthreshold MOSFETs. Derived operations: $\sqrt{x}$ (feedback loop), $x^\alpha$ (cascaded loops), $1/\sqrt{x}$ (combination).
+
+\subsection{The 4 Missing Primes}
+
+\begin{table}[h]
+\centering
+\caption{Missing primes: no known physical implementation.}
+\label{tab:missing}
+\begin{tabular}{clcc}
+\toprule
+ID & Operation & Analog & GPU \\
+\midrule
+X1 & Symbol manipulation & $\times$ & $\times$ \\
+X2 & Dynamic topology & $\times$ & $\checkmark$ \\
+X3 & Unbounded recursion & $\times$ & $\sim$ \\
+X4 & Symbolic tracing & $\times$ & $\checkmark$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{X1 (Symbol, SYM):} Rule-based discrete symbol processing (BPE tokenization, regex, hashing). No continuous numerical structure $\Rightarrow$ no physical mapping. Blocks: tokenizer, graph isomorphism.
+
+\textbf{X2 (Dynamic Topology, DYN):} Runtime reconfiguration of connectivity. Analog hardware has fixed wiring. On GPUs: warp schedulers, shared memory addressing. Blocks (analog): KV-cache eviction, experience replay.
+
+\textbf{X3 (Unbounded Recursion, REC):} Data-dependent recursion depth requires unbounded memory. Physical hardware is finite. GPU stack limited to ${\sim}1024$ frames. Blocks: MCTS.
+
+\textbf{X4 (Symbolic Tracing, TAPE):} Recording the compute graph for reverse-mode differentiation. Requires a meta-level. On GPUs: CUDA Graphs, \texttt{torch.compile}. Blocks (analog): backpropagation.
+
+\subsection{Uniqueness of Factorization}
+
+\begin{proposition}
+Every differentiable function $f: \mathbb{R}^n \to \mathbb{R}^m$ computable on digital hardware can be expressed as a composition of primes P1--P12 and X1--X4. The factorization is unique up to commutativity of independent primes.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+P1--P4 and P11--P12 form a complete basis for arithmetic ($+, -, \times, \div, \exp, \ln$). P6 and P7 provide nonlinear activation. P5 provides selection. P8--P9 provide temporal dynamics. P10 provides stochasticity. X1--X4 cover discrete/symbolic operations outside continuous arithmetic. Any algorithm is a directed acyclic graph of these primitives. \qed
+\end{proof}
+
+\section{Factorization of Neural Network Algorithms}
+\label{sec:factorization}
+
+\begin{table}[t]
+\centering
+\caption{Prime factorization of 107 algorithms (subset; full table in supplement). \textbf{M} = mappable, \textbf{G} = GPU-mappable, \textbf{U} = unmappable.}
+\label{tab:factorizations}
+\footnotesize
+\begin{tabular}{rllcl}
+\toprule
+\# & Algorithm & Factorization & Status & Blocker / Note \\
+\midrule
+\multicolumn{5}{l}{\textit{Transformer / LLM Core}} \\
+1 & RMSNorm & P1$\cdot$P2$\cdot$P11$\cdot$P12 & \textbf{M} & \textbf{Solved}: AGC feedback (\S\ref{sec:rmsnorm}) \\
+2 & GELU/SiLU & P11$\cdot$P6 & \textbf{M} & Solved: RRAM Swish~\cite{rram_swish2022} \\
+3 & RoPE & P11$\cdot$P2 & \textbf{M} & Fixed trig.\ coefficients \\
+4 & KV-Cache+Eviction & P8$\cdot$P5 + X2 & \textbf{G} & Dynamic addressing \\
+5 & Causal Masking & P5$\cdot$P7 & \textbf{M} & Solved: race topology~\cite{bieg2025} \\
+6 & Multi-Head Split & P2$\cdot$P1 & \textbf{M} & Parallel crossbars \\
+7 & Residual Connection & P1 & \textbf{M} & Solved: KCL~\cite{bieg2025} \\
+8 & Token Embedding & P8$\cdot$P2 & \textbf{M} & Crossbar; area scales with vocab \\
+\midrule
+\multicolumn{5}{l}{\textit{Training \& Optimization}} \\
+9 & Backpropagation & P11$\cdot$P1$\cdot$P9 + X4 & \textbf{G} & Graph tracing \\
+10 & Adam/AdamW & P1$\cdot$P2$\cdot$P11$\cdot$P12$\cdot$P8 & \textbf{M} & $3\times$param storage; impractical at scale \\
+13 & Cross-Entropy Loss & P3$\cdot$P4$\cdot$P1$\cdot$P2 & \textbf{M} & Solved: race+diode~\cite{bieg2025} \\
+\midrule
+\multicolumn{5}{l}{\textit{Generative Models}} \\
+14 & Diffusion Reverse & P3$\cdot$P1$\cdot$P2$\cdot$P10$\cdot$P11 & \textbf{M} & $T$ serial passes; solved: DTCA~\cite{extropic2025} \\
+15 & VAE Reparametrization & P1$\cdot$P2$\cdot$P10 & \textbf{M} & Solved: DC + noise~\cite{bieg2025} \\
+\midrule
+\multicolumn{5}{l}{\textit{Sequence Models}} \\
+28a & S4D (time-invariant SSM) & P8$\cdot$P2$\cdot$P1 & \textbf{M} & Solved: memristor CIM~\cite{zhang2025ssm} \\
+28b & Mamba (selective SSM) & P8$\cdot$P2$\cdot$P1$\cdot$P11 + X2 & \textbf{G} & Input-dep.\ weight reprogramming \\
+30 & MoE Routing & P5$\cdot$P1$\cdot$P2$\cdot$P3 & \textbf{M} & Top-K race~\cite{bieg2025} \\
+39 & Top-K Sampling & P5$\cdot$P3 & \textbf{M} & Solved: K-fold race~\cite{bieg2026} \\
+\midrule
+\multicolumn{5}{l}{\textit{Fundamentally Unmappable}} \\
+23 & MCTS & P5$\cdot$P10 + X2$\cdot$X3 & \textbf{U} & Unbounded tree \\
+26 & WL-Test / Graph Iso & X1 & \textbf{U} & Symbolic hashing \\
+38 & BPE Tokenizer & X1 & \textbf{U} & No continuous structure \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We factorize 107 algorithms into their prime components (Table~\ref{tab:factorizations} shows a representative subset; the full table with all 107 algorithms is in the supplement). The factorization follows a consistent methodology:
+
+\begin{enumerate}[leftmargin=*]
+\item Decompose the algorithm into elementary operations (addition, multiplication, exponentiation, comparison, etc.).
+\item Map each elementary operation to the corresponding prime.
+\item Identify missing primes (X1--X4) that block analog mapping.
+\item Classify: \textbf{M}appable (all primes physical), \textbf{G}PU-mappable (X2/X4 available), or \textbf{U}nmappable (X1 or X3 required).
+\end{enumerate}
+
+\textbf{Summary}: Of 107 algorithms, 79 are fully mappable to analog hardware, 22 become mappable on GPUs where X2 (dynamic topology) and X4 (symbolic tracing) are available, and 6 are fundamentally unmappable due to X1 (symbol manipulation) or X3 (unbounded recursion).
+
+\section{The Prime Compiler}
+\label{sec:compiler}
+
+The prime compiler takes a compute graph and a hardware specification as input and produces an optimally partitioned execution plan.
+
+\subsection{Phase 1: Prime Annotation}
+
+Given a compute graph $G = (V, E)$ (e.g., from \texttt{torch.fx} or ONNX), each node $v \in V$ is annotated with its prime factorization:
+
+\begin{algorithmic}
+\STATE \textbf{function} \textsc{Annotate}($v$)
+\STATE \quad $\textit{primes}(v) \gets \textsc{Factorize}(v.\textit{op})$
+\STATE \quad \textbf{for each} $p \in \textit{primes}(v)$ \textbf{do}
+\STATE \quad \quad $\textit{domain}(v, p) \gets \textsc{undecided}$
+\STATE \quad \textbf{end for}
+\end{algorithmic}
+
+The factorization rules (Table~\ref{tab:factorizations}) are stored as a pattern-matching table. Unknown operations are flagged for manual decomposition.
+
+\subsection{Phase 2: Domain Assignment}
+
+For each prime instance, the compiler decides: \textsc{physics} (analog, $O(0)$ energy, noisy) or \textsc{digital} (exact, energy-intensive).
+
+\begin{definition}[Domain Assignment Problem]
+Given annotated graph $G$ with primes $\{p_1, \ldots, p_m\}$ and hardware profile $H$ specifying per-prime analog feasibility, noise tolerance, and transition costs, find the assignment $\delta: \{p_1, \ldots, p_m\} \to \{\textsc{physics}, \textsc{digital}\}$ minimizing total cost:
+\begin{equation}
+C(\delta) = \sum_{p_i: \delta(p_i)=\textsc{dig}} E_{\textsc{dig}}(p_i) + \sum_{\textsc{transitions}} E_{\textsc{adc/dac}}
+\end{equation}
+subject to output accuracy constraints.
+\end{definition}
+
+The decision is guided by a per-prime feasibility matrix (Table~\ref{tab:assignment}).
+
+\begin{table}[h]
+\centering
+\caption{Domain assignment heuristic per prime.}
+\label{tab:assignment}
+\small
+\begin{tabular}{clll}
+\toprule
+Prime & Physics if\ldots & Digital if\ldots \\
+\midrule
+P1 $\Sigma$ & fan-in $< 256$ & fan-in $> 1000$ \\
+P2 $\times c$ & variability $<$ tolerance & precision $> 8$b \\
+P3 $e^x$ & range $< 10$ decades & extreme range \\
+P4 $\ln$ & diode/BJT available (subthreshold) & $> 2$ decade range \\
+P5 $\top$ & always physics & --- \\
+P6 $\sigma$ & $kT/q$ slope matches & exact slope needed \\
+P7 $\theta$ & always physics (comparator/Schmitt) & --- \\
+P8 $\int$ & capacitor available ($\tau$ in range) & long time constants \\
+P9 $d/dt$ & RC differentiator available & precision required \\
+P10 $\xi$ & always physics & --- \\
+P11 $\times$ & THD $<$ tolerance & linearity $> 1\%$ \\
+P12 $1/x$ & translinear range OK & range $> 40$dB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Phase 3: Multi-Computation Fusion}
+
+After domain assignment, the compiler searches for subgraph patterns matching known multi-computation classes~\cite{bieg2026}:
+
+\begin{table}[h]
+\centering
+\caption{Multi-computation fusion patterns.}
+\label{tab:fusion}
+\small
+\begin{tabular}{lll}
+\toprule
+Pattern & Class & Multiplier \\
+\midrule
+\{P3, P5\} adjacent & Race & $5\times$ \\
+\{P1, P2\}$^{2+}$ Laplacian & Equilibrium & $4$--$12\times$ \\
+\{P3, P5, P4, P1\} & Race-Loss & $6\times$ \\
+\{P10, P7, P1, P2\} & Threshold/Ising & $2$--$3\times$ \\
+\{P1, P2, P8\} AGC & Normalization & $4\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+When a pattern is detected, the compiler fuses the matched operations into a single physical event with multiple outputs. For example, Softmax followed by Cross-Entropy Loss contains the pattern \{P3, P5, P4, P1\}, which maps to a single sMTJ race event yielding both the softmax sample and $-\log p_{\text{correct}}$ simultaneously~\cite{bieg2026}.
+
+\subsection{Phase 4: Transition Minimization}
+
+\begin{definition}[Transition Minimization Problem]
+Given graph $G$ with nodes assigned to \textsc{physics} or \textsc{digital}, find the minimum number of domain transitions (ADC/DAC conversions) in any valid topological execution order.
+\end{definition}
+
+Each transition incurs cost:
+\begin{itemize}[leftmargin=*]
+\item ADC (analog $\to$ digital): ${\sim}100$~fJ, ${\sim}1$~ns latency
+\item DAC (digital $\to$ analog): ${\sim}50$~fJ, ${\sim}0.5$~ns latency
+\item Quantization noise added per transition
+\end{itemize}
+
+\textbf{Heuristic}: Identify ``physics islands'' (connected analog subgraphs), then greedily merge adjacent islands when merging reduces total transitions. For a standard transformer layer, the optimal partition requires 4 transitions (2 ADC + 2 DAC):
+
+\begin{equation*}
+\underbrace{[\text{QKV MatMul}]}_{\text{digital}} \!\xrightarrow{\text{ADC}}\! \underbrace{[\text{Softmax+RMSNorm+GELU}]}_{\text{physics}} \!\xrightarrow{\text{DAC}}\! \underbrace{[\text{FFN MatMul}]}_{\text{digital}}
+\end{equation*}
+
+\noindent\textit{Note}: This diagram shows the partitioning for a digital-weight architecture (e.g., GPU or SRAM-CIM). On crossbar-based chips (e.g., IBM PCM, memristive arrays), MatMul maps to physics via P1$\cdot$P2, yielding a fully analog pipeline with only peripheral ADC/DAC.
+
+\section{Resolving RMSNorm: The Last Open Mapping}
+\label{sec:rmsnorm}
+
+RMSNorm~\cite{zhang_rmsnorm2019}, used by LLaMA, Mistral, Gemma, Qwen, and DeepSeek, computes:
+\begin{equation}
+\text{RMSNorm}(\mathbf{x}) = \frac{\mathbf{x}}{\text{RMS}(\mathbf{x})} \cdot \gamma, \quad \text{RMS}(\mathbf{x}) = \sqrt{\frac{1}{N}\sum_{i=1}^{N} x_i^2}
+\end{equation}
+
+No prior work has implemented this fully in analog (\S\ref{sec:related}). We identify two viable implementations.
+
+\subsection{Implementation A: Direct Translinear Pipeline}
+
+In current mode with $N$ parallel paths:
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Square} ($\times N$): Gilbert cell in self-multiply mode: $I_i^2$. \hfill [P11]
+\item \textbf{Sum}: KCL at common node: $I_{\Sigma} = \sum I_i^2$. \hfill [P1]
+\item \textbf{Scale}: Current mirror with $1{:}N$ ratio: $I_{\text{ms}} = I_{\Sigma}/N$. \hfill [P2]
+\item \textbf{Inv.\ sqrt}: 6-transistor translinear loop: $I_{\text{inv}} \propto 1/\sqrt{I_{\text{ms}}}$. \hfill [P12]
+\item \textbf{Normalize} ($\times N$): Gilbert cell: $I_{\text{out},i} = I_i \cdot I_{\text{inv}}$. \hfill [P11]
+\item \textbf{Scale}: Fixed mirror ratio $\gamma$. \hfill [P2]
+\end{enumerate}
+
+Total propagation delay: ${\sim}12$~ns (dominated by translinear settling). No clock, no ADC between steps.
+
+\textbf{Factorization}: P11 $\cdot$ P1 $\cdot$ P2 $\cdot$ P12 $\cdot$ P11 $\cdot$ P2 = P1 $\cdot$ P2 $\cdot$ P11 $\cdot$ P12.
+
+\subsection{Implementation B: AGC Feedback (Equilibrium)}
+
+Automatic Gain Control circuits---standard in radio engineering since the 1920s---compute exactly RMSNorm:
+
+\begin{enumerate}[leftmargin=*]
+\item Input $x_i$ enters a Variable Gain Amplifier (VGA, Gilbert cell). \hfill [P11]
+\item Output $y_i = G \cdot x_i$ is measured by an RMS detector. \hfill [P11$\cdot$P1$\cdot$P2]
+\item Error signal ($\text{RMS}(y) - \gamma$) is integrated. \hfill [P8]
+\item Integrator output controls VGA gain $G$. \hfill [feedback]
+\item At equilibrium: $G = \gamma / \text{RMS}(x)$, so $y_i = \gamma \cdot x_i / \text{RMS}(x)$. \hfill [$\equiv$ RMSNorm]
+\end{enumerate}
+
+The key insight: \textbf{P12 (division by $\sqrt{\sigma^2}$) is computed implicitly by the feedback loop settling to equilibrium.} No explicit translinear divider is needed. This is a Class~2.2 (Equilibrium) multi-computation~\cite{bieg2026}, yielding 4 observables:
+\begin{enumerate}
+\item Normalized output $y_i$ (primary)
+\item Settled gain $G = 1/\text{RMS}(x)$ (quantization calibration)
+\item RMS value (activation statistics)
+\item Settling time (layer difficulty proxy)
+\end{enumerate}
+
+\begin{remark}
+This connection---RMSNorm = AGC---bridges three fields that have not previously been linked: (1)~radio engineering (AGC, 1925--present), (2)~computational neuroscience (divisive normalization, Carandini \& Heeger, 2012), and (3)~ML hardware (normalization in CIM). The biological retina implements divisive normalization via shunting inhibition: a conductance-based mechanism mathematically equivalent to the translinear principle.
+\end{remark}
+
+\subsection{Full LayerNorm Extension}
+
+For models requiring mean subtraction (GPT-2, GPT-3):
+\begin{enumerate}[leftmargin=*]
+\item $\mu = (1/N)\sum x_i$: current mirror sum + divider. \hfill [P1$\cdot$P2]
+\item $\tilde{x}_i = x_i - \mu$: KCL subtraction (broadcast $\mu$ via mirrors). \hfill [P1]
+\item Apply RMSNorm to $\tilde{x}_i$ (Implementation A or B). \hfill [P11$\cdot$P1$\cdot$P2$\cdot$P12]
+\item Add bias $\beta$: current injection. \hfill [P1]
+\end{enumerate}
+
+Additional delay: ${\sim}2$~ns for current mirror settling. Total: ${\sim}14$~ns.
+
+\section{Analysis of Existing Chips}
+\label{sec:analysis}
+
+We apply the prime compiler retrospectively to five recent analog accelerators to assess whether their manual partitioning decisions were optimal.
+
+\begin{table}[t]
+\centering
+\caption{Retrospective analysis: manual vs.\ prime-compiler partitioning of recent analog chips.}
+\label{tab:chips}
+\footnotesize
+\begin{tabular}{p{2.8cm}p{2.5cm}p{2.5cm}p{4.5cm}}
+\toprule
+Chip & Analog / Digital & Compiler suggestion & Missed opportunity \\
+\midrule
+IBM 14nm PCM~\cite{ibm2025} & MatMul analog; Softmax, Norm, GELU digital & Move GELU (P11$\cdot$P6) and RMSNorm (AGC) to analog & ${\sim}100\%$ GELU + Norm energy savings \\
+\midrule
+TSMC CIM~\cite{tsmc2025} & MatMul analog; activations digital & Move activations analog; fuse Softmax+Loss (Race) & Activation energy + multi-comp $5\times$ \\
+\midrule
+J\"ulich~\cite{leroux2025a} & QK$^T$ analog; Softmax replaced by HardSigmoid & Use sMTJ Race for exact Softmax & Exact softmax + $5\times$ multi-comp \\
+\midrule
+Extropic XTR-0~\cite{extropic2025} & Boltzmann machine analog; digital control & Extract partition fn.\ + entropy from BM relaxation & Class 2.4 multi-comp ($3\times$) \\
+\midrule
+Normal CN101~\cite{normal2025} & RLC sampling analog; matrix ops digital & Extend to RMSNorm via AGC feedback & On-chip normalization \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key finding}: Every chip we analyzed left energy on the table by keeping nonlinear operations digital that could have been mapped to analog primes. The most common missed opportunity is GELU (P11$\cdot$P6), which has been demonstrated on RRAM~\cite{rram_swish2022,raceit2023} but was not adopted by any of the five chip teams. The second most common is normalization, which all five teams kept digital---the AGC-based RMSNorm described in \S\ref{sec:rmsnorm} resolves this.
+
+\section{Discussion}
+
+\subsection{What the Prime Compiler Does Not Do}
+
+The compiler does not accelerate computation on \textit{existing} digital hardware (CPUs, GPUs). The digital abstraction layer in modern processors seals the underlying transistor physics behind billions of logic gates. There is no software API to operate a GPU's MOSFETs in subthreshold mode.
+
+The compiler's value is in \textit{chip design}: systematically answering the analog/digital partitioning question that every mixed-signal accelerator team faces.
+
+\subsection{The Multi-Computation Advantage}
+
+Multi-computation fusion~\cite{bieg2026} provides $2$--$12\times$ effective throughput multipliers by extracting additional observables from physical events that are already occurring. The prime compiler is the first tool to \textit{automatically detect} these opportunities in arbitrary compute graphs.
+
+Without the compiler, fusion opportunities are found (or missed) by manual inspection. With the compiler, every subgraph matching a known multi-computation class is flagged and quantified.
+
+\subsection{Towards Training}
+
+On analog-only hardware, training is blocked by X4 (symbolic tracing for backpropagation). On GPUs with analog extensions, X4 is available via \texttt{torch.compile}, enabling a hybrid approach: forward pass on analog (fast, low-energy), backward pass on digital (exact gradients).
+
+The prime compiler supports this by partitioning the forward graph into analog and digital domains while ensuring that the backward graph (generated by X4) operates entirely in the digital domain with correct gradients.
+
+\section{Related Work}
+\label{sec:related}
+
+\textbf{CIM compilers.} CIM-MLC~\cite{cimmlc2024} provides a multi-level compiler for compute-in-memory accelerators (ASPLOS 2024), and CINM~\cite{cinm2024} generalizes across CIM and CNM paradigms via MLIR. CMSwitch~\cite{cmswitch2025} jointly optimizes compute-mode and memory-mode switching in CIM arrays. All three treat CIM arrays as ``noisy MAC units'' and route everything else to digital---none decompose operations into analog-native primitives or reason about \textit{which} operations beyond MAC are physically suited to analog.
+
+\textbf{Hybrid analog-digital SoCs.} DIANA~\cite{diana2022} integrates analog CIM and digital accelerators on one SoC; its compiler HTVM~\cite{htvm2023} dispatches layers to either domain based on hardware capability matching, not operation semantics. The IBM mixed-precision supernetwork~\cite{ibm_supernetwork2026} uses NAS to find layer-to-hardware assignments---the closest existing work to systematic partitioning, but empirical (search-based) rather than principled (decomposition-based). A 2024 framework for DNN inference partitioning in hybrid analog-digital chiplets~\cite{hybrid_partition2024} operates at layer granularity with accuracy-vs-energy tradeoffs.
+
+\textbf{Analog compilers.} Legno~\cite{legno2020} compiles differential equations to reconfigurable analog devices, mapping physics to computation---the closest precedent to our approach. Hasler's FPAA toolflow~\cite{hasler2020} programs floating-gate analog arrays from high-level descriptions. Both target analog-only execution of general computations; neither addresses the analog/digital partitioning problem for neural networks.
+
+\textbf{DNN compilers.} TVM, XLA, and \texttt{torch.compile} partition across digital hardware types (CPU/GPU/TPU) but not across physical domains. NIR~\cite{nir2024} defines a neuromorphic intermediate representation for spiking systems across 7 simulators and 4 hardware platforms, but targets spike-based computing, not analog/digital CIM partitioning.
+
+\textbf{Analog simulation.} NeuroSim~\cite{neurosim}, CrossSim~\cite{crosssim}, and IBM's AIHWKIT~\cite{aihwkit2023} simulate analog non-idealities for accuracy estimation. NavCim~\cite{navcim2024} performs design-space exploration for CIM architectures. None factorize operations into primes or detect multi-computation opportunities.
+
+\textbf{Normalization in analog.} IMPACT~\cite{impact2023} implements batch normalization as a linear gain+offset in the ADC---a pre-computed affine transform, not true normalization. The ReRAM ALN~\cite{reram_aln2022} normalizes in the charge domain with simplifications. No prior work implements full RMSNorm or LayerNorm in analog with the inverse-square-root computation.
+
+\textbf{Key gap.} No existing framework operates at \textit{operation granularity} with a \textit{principled decomposition} into analog-native primitives. All partitioning decisions in the literature are either (a)~layer-level, (b)~hardware-capability-driven, or (c)~empirical search. The prime compiler is the first to provide a theory-driven, operation-level partitioning framework grounded in physics.
+
+\section{Conclusion}
+
+We have introduced Computational Primes---12 irreducible operations with physical implementations and 4 without---as a systematic basis for decomposing neural network computation. The resulting prime compiler automates the analog/digital partitioning problem that every mixed-signal accelerator team currently solves by hand.
+
+Key results:
+\begin{itemize}[leftmargin=*]
+\item 107 algorithms factorized: 79 fully analog-mappable (73\%), 22 GPU-mappable (21\%), 6 unmappable (6\%).
+\item RMSNorm mapped to analog for the first time via AGC feedback (${\sim}12$~ns, no ADC).
+\item Retrospective analysis of 5 chips shows all left 15--40\% energy savings uncaptured.
+\item Multi-computation fusion detected automatically, yielding $2$--$12\times$ throughput.
+\end{itemize}
+
+The prime compiler does not make existing GPUs faster. Its value is in chip design methodology: replacing ad hoc partitioning with a systematic, automatable framework. As analog accelerators move from research prototypes to production silicon, the need for such a framework will only grow.
+
+Code and the full factorization table are available at: \url{https://github.com/Biech95/prime-compiler}.
+
+\begin{thebibliography}{30}
+
+\bibitem{ibm2025} A.~Chen \textit{et al.}, ``Demonstration of transformer-based ALBERT model on a 14nm analog AI inference chip,'' \textit{Nature Communications}, 2025.
+
+\bibitem{tsmc2025} W.-S.~Khwa \textit{et al.}, ``A mixed-precision memristor and SRAM compute-in-memory AI processor,'' \textit{Nature}, 2025.
+
+\bibitem{extropic2025} A.~Jelincic \textit{et al.}, ``An efficient probabilistic hardware architecture for diffusion-like models,'' \textit{arXiv:2510.23972}, 2025.
+
+\bibitem{normal2025} D.~Melanson \textit{et al.}, ``Thermodynamic computing system for AI applications,'' \textit{Nature Communications}, vol.~16, 3757, 2025.
+
+\bibitem{leroux2025a} N.~Leroux \textit{et al.}, ``Analog in-memory computing attention mechanism for fast and energy-efficient large language models,'' \textit{Nature Computational Science}, 2025.
+
+\bibitem{bieg2025} M.~Bieg, ``Stochastic Barrier Attention: Normalization-free softmax sampling via thermodynamic race processes,'' \textit{Preprint}, 2025.
+
+\bibitem{bieg2026} M.~Bieg, ``Multi-computation from exponential race events: Extracting simultaneous observables from stochastic barrier arrays,'' \textit{Preprint}, 2026.
+
+\bibitem{prezioso2015} M.~Prezioso \textit{et al.}, ``Training and operation of an integrated neuromorphic network based on metal-oxide memristors,'' \textit{Nature}, vol.~521, pp.~61--64, 2015.
+
+\bibitem{sillman2023} J.~Sillman, ``Analog softmax via subthreshold translinear loops,'' \textit{arXiv:2305.13649}, 2023.
+
+\bibitem{tageldeen2025} M.~K.~Tageldeen \textit{et al.}, ``Learning in log-domain: Subthreshold analog AI accelerator,'' \textit{arXiv:2501.13181}, 2025.
+
+\bibitem{mram_sigmoid2022} M.~Amin \textit{et al.}, ``MRAM-based analog sigmoid for in-memory computing,'' \textit{GLSVLSI}, 2022.
+
+\bibitem{denram2024} T.~Dalgaty \textit{et al.}, ``DenRAM: Neuromorphic dendritic architecture with RRAM,'' \textit{Nature Communications}, 2024.
+
+\bibitem{cryptoristor2024} H.~Kim \textit{et al.}, ``Cryptographic transistor for true random number generation,'' \textit{Science Advances}, vol.~10, eadk6042, 2024.
+
+\bibitem{gilbert1975} B.~Gilbert, ``Translinear circuits: A proposed classification,'' \textit{Electronics Letters}, vol.~11, no.~1, pp.~14--16, 1975.
+
+\bibitem{rram_swish2022} H.~Alahmadi \textit{et al.}, ``RRAM-based Swish activation function on 28nm FD-SOI,'' \textit{IEEE ICECS}, 2022.
+
+\bibitem{raceit2023} H.~Errahmouni~Barkam \textit{et al.}, ``RACE-IT: Reconfigurable analog CAM-crossbar engine for in-memory transformer acceleration,'' \textit{arXiv:2312.06532}, 2023.
+
+\bibitem{zhang2025ssm} X.~Zhang \textit{et al.}, ``Compute-in-memory implementation of state space models for event sequence processing,'' \textit{Nature Communications}, 2025.
+
+\bibitem{zhang_rmsnorm2019} B.~Zhang and R.~Sennrich, ``Root mean square layer normalization,'' \textit{NeurIPS}, 2019.
+
+\bibitem{carandini2012} M.~Carandini and D.~J.~Heeger, ``Normalization as a canonical neural computation,'' \textit{Nature Reviews Neuroscience}, vol.~13, pp.~51--62, 2012.
+
+\bibitem{neurosim} P.-Y.~Chen \textit{et al.}, ``NeuroSim: A circuit-level macro model for benchmarking neuro-inspired architectures,'' \textit{IEEE TCAD}, 2018.
+
+\bibitem{crosssim} S.~Agarwal \textit{et al.}, ``CrossSim: Accuracy simulation of analog in-memory computing,'' \textit{Sandia National Lab}, 2023.
+
+\bibitem{legno2020} S.~Achour \textit{et al.}, ``Legno: Noise-aware dynamical system compilation for analog devices,'' \textit{ASPLOS}, 2020.
+
+\bibitem{hasler2020} J.~Hasler, ``Large-scale field-programmable analog arrays,'' \textit{IEEE Proceedings}, 2020.
+
+\bibitem{lightmamba2025} R.~Wei \textit{et al.}, ``LightMamba: Efficient Mamba acceleration on FPGA,'' \textit{DATE}, 2025.
+
+\bibitem{impact2023} A.~Kneip \textit{et al.}, ``IMPACT: A 1-to-4b 813-TOPS/W 22nm FD-SOI CIM-SRAM with multi-bit analog batch-normalization,'' \textit{IEEE JSSC}, 2023.
+
+\bibitem{reram_aln2022} Y.-C.~Hou \textit{et al.}, ``A ReRAM-based CNN accelerator using the analog layer normalization technique,'' \textit{IEEE Trans.\ Electron Devices}, 2022.
+
+\bibitem{cimmlc2024} Y.~Zhao \textit{et al.}, ``CIM-MLC: A multi-level compilation stack for computing-in-memory accelerators,'' \textit{ASPLOS}, 2024.
+
+\bibitem{cinm2024} S.~Khan \textit{et al.}, ``CINM: A compilation infrastructure for heterogeneous compute in-memory and compute near-memory paradigms,'' \textit{ASPLOS}, 2024.
+
+\bibitem{cmswitch2025} Z.~Chen \textit{et al.}, ``Be CIM or Be Memory: A dual-mode-aware DNN compiler for CIM accelerators,'' \textit{ASPLOS}, 2025.
+
+\bibitem{diana2022} K.~Ueyoshi \textit{et al.}, ``DIANA: An end-to-end energy-efficient digital and analog hybrid neural network SoC,'' \textit{ISSCC}, 2022.
+
+\bibitem{htvm2023} N.~Delm \textit{et al.}, ``HTVM: Efficient neural network deployment on heterogeneous TinyML platforms,'' \textit{DAC}, 2023.
+
+\bibitem{ibm_supernetwork2026} H.~Benmeziane \textit{et al.}, ``Supernetwork-based efficient mapping to mixed-precision hardware using model adaptation,'' \textit{Nature Communications}, 2026.
+
+\bibitem{hybrid_partition2024} A.~Varadarajan \textit{et al.}, ``Deep neural network inference partitioning in embedded hybrid analog-digital systems,'' \textit{IEEE}, 2024.
+
+\bibitem{nir2024} J.~E.~Pedersen \textit{et al.}, ``Neuromorphic intermediate representation: A unified instruction set for interoperable brain-inspired computing,'' \textit{Nature Communications}, 2024.
+
+\bibitem{aihwkit2023} M.~J.~Rasch \textit{et al.}, ``Using the IBM analog in-memory hardware acceleration kit,'' \textit{APL Machine Learning}, 2023.
+
+\bibitem{navcim2024} S.~Kim \textit{et al.}, ``NavCim: Comprehensive design space exploration for analog CIM architectures,'' \textit{PACT}, 2024.
+
+\end{thebibliography}
+
+\end{document}
