@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 *.egg-info/
+*.aux
+*.log
+*.out
+spice/out/
