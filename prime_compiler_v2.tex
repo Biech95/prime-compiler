@@ -11,26 +11,24 @@
 
 \newtheorem{definition}{Definition}
 \newtheorem{proposition}{Proposition}
-\newtheorem{theorem}{Theorem}
 \newtheorem{remark}{Remark}
-\newtheorem{corollary}{Corollary}
 
 \title{Computational Primes:\\A Systematic Framework for Partitioning\\Neural Network Computation Across\\Analog and Digital Domains}
 \author{Michael Bieg\\
 \textit{Independent Researcher}\\
 \texttt{Bieg.Michael@web.de}}
-\date{July 2026 (v2)}
+\date{July 2026 (v2.1)}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Analog and mixed-signal neural network accelerators face a universal design problem: which operations should be computed in the analog domain (exploiting physics at near-zero energy cost) and which should remain digital (exact but energy-intensive)? Current approaches solve this partitioning problem ad hoc for each chip design. We introduce \textbf{Computational Primes}---a set of 12 irreducible operations with known physical implementations (P1--P12) and 4 operations without physical equivalents (X1--X4)---and show that every neural network algorithm can be factored into these primes. This factorization enables a systematic compiler that (1)~decomposes any compute graph into primes, (2)~assigns each prime to the analog or digital domain based on hardware constraints, (3)~identifies multi-computation fusion opportunities where a single physical event yields multiple outputs, and (4)~minimizes domain transitions (ADC/DAC). We factorize 107 algorithms spanning transformer inference, training, generative models, reinforcement learning, GNNs, and SSMs. Of these, 79 are fully mappable to analog hardware, 22 become mappable on GPUs (where X2 and X4 are available), and 6 remain fundamentally unmappable. Analysis of five recent analog chips (IBM 14nm PCM, TSMC CIM, Extropic XTR-0, Normal Computing CN101, J\"ulich gain-cell) shows that all made suboptimal manual partitioning decisions that the prime compiler would have improved. We further demonstrate that RMSNorm---used by LLaMA, Mistral, and Gemma---has a fully analog implementation via AGC feedback circuits, resolving the last major open mapping for transformer inference. New in v2, we validate this claim at circuit level with over 17{,}000 SPICE simulations: the AGC feedback loop settles to the exact RMSNorm equilibrium within 4--6~ns, and detector-side device mismatch produces \textit{zero} per-channel distortion---only a trimmable common-mode gain shift---leaving the VGA array as the sole per-channel exposure. The open-loop translinear pipeline, by contrast---mathematically exact with ideal junctions ($<\!10^{-6}$ relative error)---degrades to 1.5--4.5 effective bits under realistic mismatch. A companion softmax experiment confirms the pattern: sum-feedback normalization beats open-loop translinear softmax by $3.1$--$3.4\times$ under paired mismatch. Feedback, not open-loop translinear arithmetic, is the viable path to analog normalization.
+Analog and mixed-signal neural network accelerators face a universal design problem: which operations should be computed in the analog domain (exploiting physics at near-zero energy cost) and which should remain digital (exact but energy-intensive)? Current approaches solve this partitioning problem ad hoc for each chip design. We introduce \textbf{Computational Primes}---a set of 12 irreducible operations with known physical implementations (P1--P12) and 4 operations without physical equivalents (X1--X4)---and show that every neural network algorithm can be factored into these primes. This factorization enables a systematic compiler that (1)~decomposes any compute graph into primes, (2)~assigns each prime to the analog or digital domain based on hardware constraints, (3)~identifies multi-computation fusion opportunities where a single physical event yields multiple outputs, and (4)~minimizes domain transitions (ADC/DAC). We factorize 107 algorithms spanning transformer inference, training, generative models, reinforcement learning, GNNs, and SSMs. Of these, 79 are fully mappable to analog hardware, 22 become mappable on GPUs (where X2 and X4 are available), and 6 remain fundamentally unmappable. Analysis of five recent analog chips (IBM 14nm PCM, TSMC CIM, Extropic XTR-0, Normal Computing CN101, J\"ulich gain-cell) shows that in all five, the prime compiler identifies additional analog mapping opportunities for nonlinear operations, worth 15--40\% of nonlinear-operation energy---while the circuit-level results also explain why the teams' caution toward the obvious open-loop implementations was justified. We further demonstrate that RMSNorm---used by LLaMA, Mistral, and Gemma---has a fully analog implementation via AGC feedback circuits, resolving the last major open mapping for transformer inference. New in v2, we validate this claim at circuit level with over 17{,}000 SPICE simulations: the AGC feedback loop settles to the exact RMSNorm equilibrium within 4--6~ns, and detector-side device mismatch produces \textit{zero} per-channel distortion---only a trimmable common-mode gain shift---leaving the VGA array as the sole per-channel exposure. The open-loop translinear pipeline, by contrast---mathematically exact with ideal junctions ($<\!10^{-6}$ relative error)---degrades to 1.5--4.5 effective bits under realistic mismatch. A companion softmax experiment confirms the pattern: sum-feedback normalization beats open-loop translinear softmax by $3.1$--$3.4\times$ under paired mismatch. Feedback, not open-loop translinear arithmetic, is the viable path to analog normalization.
 \end{abstract}
 
 \section{Introduction}
 
-The past three years have seen an unprecedented surge in analog and mixed-signal neural network accelerators. IBM demonstrated a 14nm PCM chip running ALBERT~\cite{ibm2025}, TSMC fabricated a memristor+SRAM heterogeneous CIM processor~\cite{tsmc2025}, Extropic built a thermodynamic computing board for diffusion models~\cite{extropic2025}, Normal Computing taped out an RLC-based sampling ASIC~\cite{normal2025}, and Leroux et al.\ at Forschungszentrum J\"ulich showed analog attention with 70,000$\times$ energy reduction over GPUs~\cite{leroux2025a}.
+The past three years have seen an unprecedented surge in analog and mixed-signal neural network accelerators. IBM demonstrated a 14nm PCM chip running ALBERT~\cite{ibm2025}, TSMC fabricated a memristor+SRAM heterogeneous CIM processor~\cite{tsmc2025}, Extropic built a thermodynamic computing board for diffusion models~\cite{extropic2025}, Normal Computing built an RLC-based thermodynamic sampling system~\cite{normal2025} (the basis of its CN101 tape-out), and Leroux et al.\ at Forschungszentrum J\"ulich showed analog attention with 70,000$\times$ energy reduction over GPUs~\cite{leroux2025a}.
 
 Every one of these projects confronted the same fundamental question: \textit{Which operations should be computed in the analog domain, and which should remain digital?}
 
@@ -49,7 +47,7 @@ We introduce such a framework. Our contributions are:
 
 \item \textbf{Circuit-level validation (new in v2)}: SPICE simulations (over 17{,}000 runs, real junction $I$--$V$ characteristics, Monte-Carlo device mismatch) confirming the AGC mapping and quantifying \textit{why} it wins: feedback converts per-device mismatch into a harmless common-mode gain error---simulated directly, not only argued: detector mismatch yields exactly zero per-channel distortion---while the open-loop translinear pipeline accumulates per-channel distortion. A paired softmax experiment generalizes the result (\S\ref{sec:validation}).
 
-\item \textbf{Chip analysis}: Retrospective analysis of five recent analog chips showing that prime-compiler-guided partitioning would have captured 15--40\% additional energy savings on nonlinear operations (\S\ref{sec:analysis}).
+\item \textbf{Chip analysis}: Retrospective analysis of five recent analog chips identifying additional analog mapping opportunities worth 15--40\% of nonlinear-operation energy, together with the platform prerequisites under which each applies (\S\ref{sec:analysis}).
 \end{enumerate}
 
 \subsection{Scope and Limitations}
@@ -271,7 +269,7 @@ P12 $1/x$ & \textit{in feedback loop}, or trimmed open-loop & open-loop, untrimm
 
 \subsection{Phase 3: Multi-Computation Fusion}
 
-After domain assignment, the compiler searches for subgraph patterns matching known multi-computation classes~\cite{bieg2026}:
+After domain assignment, the compiler searches for subgraph patterns matching known multi-computation classes (Table~\ref{tab:fusion})~\cite{bieg2026}:
 
 \begin{table}[h]
 \centering
@@ -306,7 +304,7 @@ Each transition incurs cost:
 \item Quantization noise added per transition
 \end{itemize}
 
-\textbf{Heuristic}: Identify ``physics islands'' (connected analog subgraphs), then greedily merge adjacent islands when merging reduces total transitions. For a standard transformer layer, the optimal partition requires 4 transitions (2 ADC + 2 DAC):
+\textbf{Heuristic}: Identify ``physics islands'' (connected analog subgraphs), then greedily merge adjacent islands when merging reduces total transitions. For a standard transformer layer, the optimal partition requires 4 transitions (2 ADC + 2 DAC)---two physics islands per layer (the attention and FFN nonlinearities), each bracketed by one ADC/DAC pair; the diagram below shows one such island:
 
 \begin{equation*}
 \underbrace{[\text{QKV MatMul}]}_{\text{digital}} \!\xrightarrow{\text{ADC}}\! \underbrace{[\text{Softmax+RMSNorm+GELU}]}_{\text{physics}} \!\xrightarrow{\text{DAC}}\! \underbrace{[\text{FFN MatMul}]}_{\text{digital}}
@@ -456,31 +454,33 @@ Additional delay: ${\sim}2$~ns for current mirror settling. Total: ${\sim}7$~ns 
 \section{Analysis of Existing Chips}
 \label{sec:analysis}
 
-We apply the prime compiler retrospectively to five recent analog accelerators to assess whether their manual partitioning decisions were optimal (Table~\ref{tab:chips}).
+We apply the prime compiler retrospectively to five recent analog accelerators to identify analog mapping opportunities beyond their published partitioning (Table~\ref{tab:chips}).
 
 \begin{table}[t]
 \centering
-\caption{Retrospective analysis: manual vs.\ prime-compiler partitioning of recent analog chips.}
+\caption{Retrospective analysis: additional analog mapping opportunities identified by the prime compiler in recent analog chips. The last column notes whether a suggestion is realizable in the chip's existing process or presupposes a device technology not present on the platform.}
 \label{tab:chips}
 \footnotesize
 \begin{tabular}{p{2.8cm}p{2.5cm}p{2.5cm}p{4.5cm}}
 \toprule
-Chip & Analog / Digital & Compiler suggestion & Missed opportunity \\
+Chip & Analog / Digital & Compiler suggestion & Additional opportunity \\
 \midrule
-IBM 14nm PCM~\cite{ibm2025} & MatMul analog; Softmax, Norm, GELU digital & Move GELU (P11$\cdot$P6) and RMSNorm (AGC) to analog & ${\sim}100\%$ GELU + Norm energy savings \\
+IBM 14nm PCM~\cite{ibm2025} & MatMul analog; Softmax, Norm, GELU digital & Move GELU (P11$\cdot$P6) and RMSNorm (AGC) to analog & ${\sim}100\%$ of GELU + Norm op energy. AGC is standard-CMOS; GELU demonstrated on RRAM, not yet ported to PCM \\
 \midrule
-TSMC CIM~\cite{tsmc2025} & MatMul analog; activations digital & Move activations analog; fuse Softmax+Loss (Race) & Activation energy + multi-comp $5\times$ \\
+TSMC CIM~\cite{tsmc2025} & MatMul analog; activations digital & Move activations analog; fuse Softmax+Loss (Race) & Activation energy + multi-comp $5\times$. Race fusion requires sMTJ devices---a technology addition \\
 \midrule
-J\"ulich~\cite{leroux2025a} & QK$^T$ analog; Softmax replaced by HardSigmoid & Use sMTJ Race for exact Softmax & Exact softmax + $5\times$ multi-comp \\
+J\"ulich~\cite{leroux2025a} & QK$^T$ analog; Softmax replaced by HardSigmoid & Use sMTJ Race for exact Softmax & Exact softmax + $5\times$ multi-comp. Requires sMTJ integration---different device technology than the gain-cell platform \\
 \midrule
-Extropic XTR-0~\cite{extropic2025} & Boltzmann machine analog; digital control & Extract partition fn.\ + entropy from BM relaxation & Class 2.4 multi-comp ($3\times$) \\
+Extropic XTR-0~\cite{extropic2025} & Boltzmann machine analog; digital control & Extract partition fn.\ + entropy from BM relaxation & Class 2.4 multi-comp ($3\times$); readout change on existing hardware \\
 \midrule
-Normal CN101~\cite{normal2025} & RLC sampling analog; matrix ops digital & Extend to RMSNorm via AGC feedback & On-chip normalization \\
+Normal CN101~\cite{normal2025} & RLC sampling analog; matrix ops digital & Extend to RMSNorm via AGC feedback & On-chip normalization (standard-CMOS AGC); relevant where normalization enters the target workload \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Key finding}: Every chip we analyzed left energy on the table by keeping nonlinear operations digital that could have been mapped to analog primes. The most common missed opportunity is GELU (P11$\cdot$P6), which has been demonstrated on RRAM~\cite{rram_swish2022,raceit2023} but was not adopted by any of the five chip teams. The second most common is normalization, which all five teams kept digital---the AGC-based RMSNorm described in \S\ref{sec:rmsnorm}, now validated at circuit level in \S\ref{sec:validation}, resolves this. Notably, the validation also \textit{vindicates} part of the teams' caution: the obvious open-loop translinear approach that a designer would try first is indeed too mismatch-fragile to ship (Table~\ref{tab:mismatch}); the viable path is the feedback topology.
+\textbf{Key finding}: In every chip we analyzed, the compiler identifies nonlinear operations that remained digital but have demonstrated analog mappings. The most common unexploited mapping is GELU (P11$\cdot$P6), which has been demonstrated on RRAM~\cite{rram_swish2022,raceit2023} but was not adopted by any of the five chip teams. The second most common is normalization, which all five teams kept digital---the AGC-based RMSNorm described in \S\ref{sec:rmsnorm}, now validated at circuit level in \S\ref{sec:validation}, resolves this. Notably, the validation also \textit{vindicates} part of the teams' caution: the obvious open-loop translinear approach that a designer would try first is indeed too mismatch-fragile to ship (Table~\ref{tab:mismatch}); the viable path is the feedback topology.
+
+Two caveats bound these findings. First, they are energy-only assessments from published data: area, calibration overhead, testability, and schedule risk---none of which can be evaluated from outside a design team---may well justify the original choices. Second, where a suggestion presupposes a device technology not present on the platform (sMTJ Race on the TSMC and J\"ulich chips; RRAM-demonstrated GELU on the IBM PCM chip), it is a roadmap option, not a missed optimization. The compiler's role is to make the option space and its prerequisites explicit, not to relitigate design decisions.
 
 \section{Discussion}
 
@@ -532,7 +532,7 @@ Key results:
 \item 107 algorithms factorized: 79 fully analog-mappable (73\%), 22 GPU-mappable (21\%), 6 unmappable (6\%).
 \item RMSNorm mapped to analog via AGC feedback and validated in over 17{,}000 SPICE simulations: settling to the exact equilibrium in 4--6~ns with no ADC in the loop; detector-side mismatch produces exactly zero per-channel distortion, leaving the VGA array as the sole per-channel exposure. The same loop with a sum detector computes softmax, beating the open-loop realization $3.1$--$3.4\times$ under paired mismatch.
 \item The validation yields a design principle with a precise boundary: open-loop translinear realizations of P12 are mismatch-fragile (1.5--4.5 effective bits at realistic corners; the ideality-factor lever $\ln(I/I_s) \approx 23$ is the dominant mechanism), while feedback-equilibrium realizations demote mismatch to a benign common-mode gain error---for everything downstream of the loop input; primes upstream of the loop keep their exposure.
-\item Retrospective analysis of 5 chips shows all left 15--40\% energy savings uncaptured.
+\item Retrospective analysis of 5 chips identifies 15--40\% additional energy savings on nonlinear operations, subject to each platform's device-technology prerequisites.
 \item Multi-computation fusion detected automatically, yielding $2$--$12\times$ throughput.
 \end{itemize}
 
@@ -558,7 +558,7 @@ Code, the full factorization table, and the SPICE validation testbench are avail
 
 \bibitem{prezioso2015} M.~Prezioso \textit{et al.}, ``Training and operation of an integrated neuromorphic network based on metal-oxide memristors,'' \textit{Nature}, vol.~521, pp.~61--64, 2015.
 
-\bibitem{sillman2023} J.~Sillman, ``Analog softmax via subthreshold translinear loops,'' \textit{arXiv:2305.13649}, 2023.
+\bibitem{sillman2023} J.~Sillman, ``Analog Implementation of the Softmax Function,'' \textit{arXiv:2305.13649}, 2023.
 
 \bibitem{tageldeen2025} M.~K.~Tageldeen \textit{et al.}, ``Learning in log-domain: Subthreshold analog AI accelerator,'' \textit{arXiv:2501.13181}, 2025.
 
