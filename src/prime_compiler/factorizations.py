@@ -116,7 +116,7 @@ FACTORIZATIONS = {
     "getitem":             (set(),                   set(),     Status.M, "Routing only"),
 
     # ── Unmappable ──
-    "sort":                ({P.P5},                  {X.X2},    Status.G, "Iterated WTA needs dynamic routing"),
+    "sort":                ({P.P5, P.P3},            set(),     Status.M, "Race yields full ranking [7]; sort-in-memory (Yu et al. 2025)"),
     "topk":                ({P.P5, P.P3},            set(),     Status.M, "K-fold race"),
     "unique":              (set(),                   {X.X1},    Status.U, "Symbol comparison"),
     "scatter":             ({P.P1},                  {X.X2},    Status.G, "Dynamic indexing"),
