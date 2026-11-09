@@ -280,7 +280,10 @@ def main():
     MS = float(np.mean(np.asarray(x) ** 2))
     wn = math.sqrt(2 * 2e-3 * G0 * MS / (1e-12 * 0.5e-9))
     zeta = 1.0 / (2 * wn * 0.5e-9)
-    print(f"    damping: first overshoot {over*100:+.1f} %, ringing "
+    # NB (2026-11-09): `over` is the maximum after the first crossing, i.e.
+    # the rebound (second extremum) relative to the final gain, not the first
+    # overshoot.  Measurement logic unchanged.
+    print(f"    damping: rebound after 1st crossing {over*100:+.1f} % of final, ringing "
           f"{f_ring/1e6:.0f} MHz")
     print(f"    analytic 2nd order: wn/2pi = {wn/2/math.pi/1e6:.1f} MHz, "
           f"zeta = {zeta:.4f}")
@@ -438,7 +441,7 @@ def main():
     print(f"    critical damping (zeta = 1) at k_crit = C_g/(8 G0 MS "
           f"tau_det) = {k_crit:.3e}  ({2e-3/k_crit:.1f}x below the "
           f"published k)")
-    print(f"    {'variant':<26} {'zeta':>6} {'overshoot':>10} "
+    print(f"    {'variant':<26} {'zeta':>6} {'rebound':>10} "
           f"{'t_set 1%':>10} {'ENBW_loop':>11} {'peaking':>9} "
           f"{'sig_pc(2j)':>11} {'sig*sqrt(tset)':>15}")
     damp = []
@@ -465,7 +468,7 @@ def main():
         tt3 = ts2[sg]
         cr2 = np.nonzero(np.diff(np.sign(dd)) != 0)[0]
         ov = (float(np.max(dd[tt3 > tt3[cr2[0]]]) / step)
-              if len(cr2) else 0.0)          # first overshoot, rel. to step
+              if len(cr2) else 0.0)          # rebound (max after 1st crossing), rel. to step
         offs = np.abs(dd) / step > 0.01
         tset = (tt3[int(np.max(np.nonzero(offs))) + 1] - T_STEP * 1e-9
                 if offs.any() else 0.0)

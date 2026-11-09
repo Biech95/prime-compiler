@@ -704,6 +704,17 @@ in 20 ns, with a **+47 % first overshoot** past the final value and an
 implied ringing frequency of ~825 MHz. The resonance is a property of the
 loop, not an artifact of the spectral estimator.
 
+> **Correction note (2026-11-09).** The "+47 % first overshoot" above is the
+> *rebound* (maximum after the first crossing, normalised to the final gain),
+> not the first overshoot. Rerun of the identical noiseless 2.5x step
+> (agc_step_response.py and agc_step_response.log, published with the paper record): first extremum
+> after the step is an undershoot of **−88.9 % of the step height (−133.4 % of
+> G_final)**, rebound **+31.1 % of the step (+46.6 % of G_final)**; ringing
+> 778 MHz from the first six extrema (~825 MHz later). Of the "40 crossings",
+> 40 is reproduced as the raw sign-change count in 20 ns, but only **11**
+> crossings occur while the lobe amplitude exceeds 1e-3 of the step height;
+> the rest are at the solver floor.
+
 So the loop does not merely reject detector noise outside its bandwidth —
 it *amplifies* it near resonance. That peaking is what turns a 52 µA
 detector bias into **7.7 % RMS gain jitter** at I₀ = 1 µA. With the 19 fF

@@ -1078,12 +1078,16 @@ def cmd_gc(args):
     tt = ts_[seg]
     cr = np.nonzero(np.diff(np.sign(d)) != 0)[0]
     tcr = tt[cr]
+    # NB (2026-11-09): this is the maximum AFTER the first crossing, i.e. the
+    # rebound (second extremum), normalised to the final gain -- not the
+    # first overshoot.  The count `cr` includes sign changes at the solver
+    # floor late in the window.  Measurement logic left unchanged.
     over = float(np.max(d[tt > tcr[0]]) / gfin) if len(cr) else 0.0
     fring = (1.0 / (2 * float(np.median(np.diff(tcr))))
              if len(tcr) > 2 else float("nan"))
     print(f"\n  deterministic corroboration (noiseless 2.5x step, NO noise "
           f"sources):\n    {len(cr)} crossings of the final gain after the "
-          f"step; first overshoot {over*100:+.2f} %;\n    implied ringing "
+          f"step; rebound after 1st crossing {over*100:+.2f} % of final;\n    implied ringing "
           f"frequency {fring/1e6:.0f} MHz -- the loop genuinely rings, so "
           f"the PSD\n    peak is a property of the loop, not of the "
           f"estimator.")

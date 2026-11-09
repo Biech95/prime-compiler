@@ -263,6 +263,15 @@ campaigns never saw this):
 | k = 5e-4, R_z = 500 Ω | ∞ | 0.0 % | 3.00 ns | 348 MHz | 1.00× | 1.17 % | 2.02 |
 | k = k_crit, R_z = 500 Ω | ∞ | 0.0 % | 8.31 ns | 125 MHz | 1.00× | 0.698 % | 2.01 |
 
+> **Correction note (2026-11-09).** The "overshoot" column of this table is the
+> *rebound*: the script takes the maximum after the first crossing (relative to
+> the step height), i.e. the second extremum. For the published loop the first
+> overshoot is **40.37 %** of the step and the rebound **15.64 %**; the other
+> rows' first overshoots were not re-measured. Likewise "+47 % overshoot"
+> (row 4 of the question table, §5 statement 1 and the supporting clause) is
+> the large-signal *rebound* (+46.6 % of the final gain); the first extremum of
+> the 2.5x step is an undershoot of 88.9 % of the step height. Rerun: agc_step_response.py and agc_step_response.log, published with the paper record.
+
 Three statements, and they must not be run together:
 
 1. **Lowering `k` to `k_crit` is nearly free, and it lands exactly on the

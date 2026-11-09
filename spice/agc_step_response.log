@@ -1,0 +1,52 @@
+input draw seed 2026, N = 8; analytic small-signal model: f_n = 531.6 MHz, zeta = 0.2994, ideal 2nd-order overshoot 37.3 %, f_d = 507 MHz
+
+=== large signal: 2.5x input step at 20 ns (phase0 bench) ===
+  G0 = 0.717142   G_final = 0.286857   step height G0-G_final = 0.430285   (G0/G_final = 2.5000)
+    #  t - t_step [ns]  (G-Gf)/step   (G-Gf)/Gf
+    1           0.6850      -88.91%    -133.37%
+    2           1.4730      +31.08%     +46.62%
+    3           2.0630      -19.41%     -29.11%
+    4           2.6870       +9.72%     +14.57%
+    5           3.2870       -5.53%      -8.29%
+    6           3.8970       +2.94%      +4.42%
+    7           4.5010       -1.63%      -2.44%
+    8           5.1070       +0.88%      +1.32%
+    9           5.7130       -0.48%      -0.72%
+   10           6.3190       +0.26%      +0.39%
+   11           6.9250       -0.14%      -0.22%
+   12           7.5310       +0.08%      +0.12%
+  ringing frequency from the first 6 extremum spacings: 778 MHz
+  overshoot lobes with |G-Gf| > 0.001 x step: 11 (= crossings of G_final above that amplitude)
+  raw sign changes of G-Gf in (t_step+0.2, t_step+20) ns: 40; median-spacing frequency of those 825 MHz
+  smallest lobe amplitude |G-Gf|/step = 0.00e+00; lobes below threshold: 33
+  legacy metric max(G-Gf after 1st crossing): +46.62% of G_final, +31.08% of step
+
+=== small signal: +10 % input step at 200 ns (reconciliation bench) ===
+  G0 = 0.717142   G_final = 0.651947   step height G0-G_final = 0.065195   (G0/G_final = 1.1000)
+    #  t - t_step [ns]  (G-Gf)/step   (G-Gf)/Gf
+    1           0.9510      -40.37%      -4.04%
+    2           1.8910      +15.64%      +1.56%
+    3           2.8250       -6.17%      -0.62%
+    4           3.7610       +2.41%      +0.24%
+    5           4.6970       -0.95%      -0.09%
+    6           5.6330       +0.37%      +0.04%
+    7           6.5690       -0.15%      -0.01%
+    8           7.5050       +0.06%      +0.01%
+    9           8.4410       -0.02%      -0.00%
+   10           9.3730       +0.01%      +0.00%
+   11          10.3050       -0.00%      -0.00%
+   12          11.2370       +0.00%      +0.00%
+  ringing frequency from the first 6 extremum spacings: 534 MHz
+  overshoot lobes with |G-Gf| > 0.001 x step: 7 (= crossings of G_final above that amplitude)
+  raw sign changes of G-Gf in (t_step+0.2, t_step+20) ns: 25; median-spacing frequency of those 535 MHz
+  smallest lobe amplitude |G-Gf|/step = 0.00e+00; lobes below threshold: 18
+  legacy metric max(G-Gf after 1st crossing): +1.56% of G_final, +15.64% of step
+
+=== settling after a 2.5x input step at 40 ns (G-D bench, 1 % band of own equilibrium) ===
+  variant                   ts cold  ts step  min V(g)   G_final 1st ext/step 2nd ext/step crossings>1e-3
+  free                        4.03n    5.25n   -0.0959  0.286857      -88.96%      +31.09%             11
+  vga-clamp                   4.03n    5.23n   -0.0929  0.286857      -88.26%      +31.15%             11
+  node-clamp                  4.03n    5.11n   -0.0001  0.286857      -66.70%      +26.47%             11
+  free, C_g +2 %              4.07n    5.30n   -0.0926  0.286857      -88.18%      +30.75%             11
+  vga-clamp, C_g +2 %         4.07n    5.27n   -0.0899  0.286857      -87.56%      +30.81%             11
+  node-clamp, C_g +2 %        4.07n    5.14n   -0.0001  0.286857      -66.70%      +26.29%             11
